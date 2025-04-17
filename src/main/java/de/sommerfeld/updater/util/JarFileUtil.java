@@ -9,15 +9,21 @@ import java.nio.charset.StandardCharsets;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
 
+/**
+ * Utility class to retrieve the path to the JAR file of the current class.
+ */
 public class JarFileUtil {
 
   private JarFileUtil() {}
 
+  /**
+   * Returns the path to the JAR file of the current class.
+   */
   public static File getJarFile() throws IOException {
     ProtectionDomain protectionDomain = JarFileUtil.class.getProtectionDomain();
     CodeSource codeSource = protectionDomain.getCodeSource();
     if (codeSource == null) {
-      throw new IOException("CodeSource ist null. Läuft die Anwendung aus einer JAR-Datei?");
+      throw new IOException("CodeSource is null. Is the application running from a Jar file?");
     }
     URL location = codeSource.getLocation();
 
@@ -25,7 +31,7 @@ public class JarFileUtil {
     try {
       decodedPath = URLDecoder.decode(location.getPath(), StandardCharsets.UTF_8.name());
     } catch (UnsupportedEncodingException e) {
-      throw new IOException("UTF-8 nicht unterstützt.", e);
+      throw new IOException("UTF-8 is not supported.", e);
     }
 
     return new File(decodedPath);

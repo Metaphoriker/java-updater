@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
@@ -12,7 +13,7 @@ public class UpdateChecker {
 
   private final String versionUrl;
 
-  private boolean updateAvailable = false; // Initialize to false
+  private boolean updateAvailable = false;
 
   public UpdateChecker(String versionUrl) {
     this.versionUrl = versionUrl;
@@ -34,7 +35,7 @@ public class UpdateChecker {
 
     HttpURLConnection connection = null;
     try {
-      URL url = new URL(versionUrl);
+      URL url = URI.create(versionUrl).toURL();
       connection = (HttpURLConnection) url.openConnection();
       connection.setRequestMethod("GET"); // Set request method explicitly
       connection.connect();
@@ -49,23 +50,23 @@ public class UpdateChecker {
           Version latest = new Version(latestVersion);
           updateAvailable = latest.compareTo(current) > 0;
         } catch (IllegalArgumentException e) {
-          log("Konnte versionen nicht parsen. " + e.getMessage());
+          log("Could not parse version: " + e.getMessage());
           updateAvailable = true;
         }
       }
 
       log(
-          "Update-Check abgeschlossen: neueste Version = "
+          "Update-Check successful, latest version = "
               + latestVersion
-              + ", Update verfügbar = "
+              + ", is update available = "
               + updateAvailable);
     } catch (IOException e) {
-      log("Fehler beim Prüfen auf Update: " + e.getMessage()); // More specific message
+      log("Error while checking for an update: " + e.getMessage());
       updateAvailable = true; // Consider an update available on error
     } finally {
       if (connection != null) {
         connection.disconnect();
-        log("Verbindung geschlossen");
+        log("Connection closed");
       }
     }
   }
@@ -79,8 +80,8 @@ public class UpdateChecker {
         new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
       return bufferedReader.readLine();
     } catch (IOException e) {
-      log("Fehler beim Lesen der Zeile aus dem InputStream: " + e.getMessage());
-      return "UNGÜLTIG";
+      log("Error while reading line from InputStream: " + e.getMessage());
+      return "_";
     }
   }
 

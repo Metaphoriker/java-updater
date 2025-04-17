@@ -2,6 +2,7 @@ package de.sommerfeld.updater;
 
 import java.io.*;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -12,36 +13,27 @@ import java.util.zip.ZipFile;
 
 public class Updater {
 
-  public static final String UPDATER_VERSION_URL =
-      "https://raw.githubusercontent.com/revortix/randomizer-cs2/stage/randomizer-desktop/randomizer-updater/src/main/resources/updater-version.txt";
-  public static final String UPDATER_DOWNLOAD_URL =
-      "https://github.com/revortix/randomizer-cs2/releases/download/latest/randomizer-updater.jar";
-  public static final String RANDOMIZER_VERSION_URL =
-      "https://raw.githubusercontent.com/revortix/randomizer-cs2/stage/randomizer-model/src/main/resources/model-version.txt";
-  public static final String RANDOMIZER_DOWNLOAD_URL =
-      "https://github.com/revortix/randomizer-cs2/releases/download/latest/randomizer.jar";
+    public static final String NOT_FOUND = "NOT FOUND";
+    private final ExecutorService executorService = Executors.newCachedThreadPool();
 
-  private static final ExecutorService EXECUTOR_SERVICE = Executors.newCachedThreadPool();
-
-  public static CompletionStage<Void> update(File target, String downloadUrl) {
+  public CompletionStage<Void> update(File target, String downloadUrl) {
     return update(target, downloadUrl, null);
   }
 
-  public static CompletionStage<Void> update(
+  public CompletionStage<Void> update(
       File target, String downloadUrl, ProgressListener listener) {
     return CompletableFuture.runAsync(
             () -> {
               log("Starting update from URL: " + downloadUrl + " to target file: " + target);
               try {
-                URL downloadFrom = new URL(downloadUrl);
+                URL downloadFrom = URI.create(downloadUrl).toURL();
                 copyURLToFileWithProgress(downloadFrom, target, listener);
                 log("Successfully updated from URL: " + downloadUrl + " to target file: " + target);
               } catch (IOException e) {
                 throw new IllegalStateException(
                     "Error updating from URL: " + downloadUrl + " to target file: " + target, e);
               }
-            },
-            EXECUTOR_SERVICE)
+            }, executorService)
         .exceptionally(
             ex -> {
               log("Exception during update: " + ex.getMessage());
@@ -49,7 +41,7 @@ public class Updater {
             });
   }
 
-  private static void copyURLToFileWithProgress(
+  private void copyURLToFileWithProgress(
       URL source, File destination, ProgressListener listener) throws IOException {
     HttpURLConnection connection = (HttpURLConnection) source.openConnection();
     connection.setRequestMethod("GET");
@@ -58,13 +50,12 @@ public class Updater {
       long totalBytes = connection.getContentLengthLong();
 
       File parentDir = destination.getParentFile();
-      if (parentDir != null && !parentDir.exists()) {
-        if (!parentDir.mkdirs()) {
+      if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
           throw new IOException("Failed to create directory: " + parentDir.getAbsolutePath());
         }
-      }
 
-      try (FileOutputStream outputStream = new FileOutputStream(destination)) {
+
+        try (FileOutputStream outputStream = new FileOutputStream(destination)) {
         byte[] buffer = new byte[1024];
         long bytesRead = 0;
         int n;
@@ -86,23 +77,8 @@ public class Updater {
     }
   }
 
-  public enum FileType {
-    UPDATER("updater-"),
-    RANDOMIZER("model-");
-
-    private final String prefix;
-
-    FileType(String prefix) {
-      this.prefix = prefix;
-    }
-
-    public String getPrefix() {
-      return prefix;
-    }
-  }
-
-  public static CompletionStage<Boolean> isUpdateAvailable(
-      File toUpdate, String versionUrl, FileType fileType) {
+  public CompletionStage<Boolean> isUpdateAvailable(
+      File toUpdate, String versionUrl, String versionFile) {
     return CompletableFuture.supplyAsync(
             () -> {
               log("Checking for update: File = " + toUpdate + ", Version URL = " + versionUrl);
@@ -113,7 +89,7 @@ public class Updater {
               }
 
               String version =
-                  getVersion(toUpdate, fileType).toCompletableFuture().join(); // get the version
+                  getVersion(toUpdate, versionFile).toCompletableFuture().join();
               log("Checking update for version=" + version + " of file=" + toUpdate);
 
               boolean updateAvailable =
@@ -124,8 +100,7 @@ public class Updater {
                       + ", Update available = "
                       + updateAvailable);
               return updateAvailable;
-            },
-            EXECUTOR_SERVICE)
+            }, executorService)
         .exceptionally(
             ex -> {
               log("Exception during update check: " + ex.getMessage());
@@ -133,40 +108,38 @@ public class Updater {
             });
   }
 
-  public static CompletionStage<String> getVersion(File file, FileType fileType) {
+  public CompletionStage<String> getVersion(File file, String versionFile) {
     return CompletableFuture.supplyAsync(
             () -> {
               if (!file.exists()) {
                 log("File not found: " + file);
-                return "NOT FOUND";
+                return NOT_FOUND;
               }
 
-              String versionFile = fileType.getPrefix() + "version.txt";
               try (ZipFile zipFile = new ZipFile(file)) {
                 ZipEntry versionEntry = zipFile.getEntry(versionFile);
                 if (versionEntry == null) {
-                  return "NOT FOUND";
+                  return NOT_FOUND;
                 }
 
                 return readLineFromInputStream(zipFile.getInputStream(versionEntry));
               } catch (IOException e) {
                 throw new IllegalStateException("Error reading version from file: " + file, e);
               }
-            },
-            EXECUTOR_SERVICE)
+            }, executorService)
         .exceptionally(
             ex -> {
               log("Exception during version retrieval: " + ex.getMessage());
-              return "NOT FOUND";
+              return NOT_FOUND;
             });
   }
 
-  public static CompletionStage<String> getLatestVersion(String versionUrl) {
+  public CompletionStage<String> getLatestVersion(String versionUrl) {
     return CompletableFuture.supplyAsync(
             () -> {
               log("Retrieving latest version from URL: " + versionUrl);
               try {
-                URL url = new URL(versionUrl);
+                URL url = URI.create(versionUrl).toURL();
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("GET");
 
@@ -182,8 +155,7 @@ public class Updater {
                 throw new IllegalStateException(
                     "Error retrieving latest version from URL: " + versionUrl, e);
               }
-            },
-            EXECUTOR_SERVICE)
+            }, executorService)
         .exceptionally(
             ex -> {
               log("Exception during latest version retrieval: " + ex.getMessage());
@@ -191,7 +163,7 @@ public class Updater {
             });
   }
 
-  public static CompletionStage<Boolean> isUpdateAvailable(String version, String versionUrl) {
+  public CompletionStage<Boolean> isUpdateAvailable(String version, String versionUrl) {
     return CompletableFuture.supplyAsync(
             () -> {
               log(
@@ -210,29 +182,25 @@ public class Updater {
                       + ", Update available = "
                       + updateAvailable);
               return updateAvailable;
-            },
-            EXECUTOR_SERVICE)
+            }, executorService)
         .exceptionally(
             ex -> {
               log("Exception during update availability check: " + ex.getMessage());
-              if (ex instanceof RuntimeException) {
-                throw (RuntimeException) ex;
-              }
-              throw new RuntimeException(ex);
+              throw new IllegalStateException(ex);
             });
   }
 
-  public static void close() {
-      EXECUTOR_SERVICE.shutdown();
+  public void close() {
+      executorService.shutdown();
   }
 
-  private static String readLineFromInputStream(InputStream inputStream) throws IOException {
+  private String readLineFromInputStream(InputStream inputStream) throws IOException {
     try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream))) {
       return bufferedReader.readLine();
     }
   }
 
-  private static void log(String message) {
+  private void log(String message) {
     System.out.println(message); // TODO: add proper logging
   }
 }
